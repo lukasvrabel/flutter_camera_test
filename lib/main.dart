@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:image/image.dart' as imglib;
+import 'package:collection/collection.dart';
 
 Future<void> main() async {
   // Ensure that plugin services are initialized so that `availableCameras()`
@@ -48,9 +49,10 @@ class TakePictureScreenState extends State<TakePictureScreen> {
   late CameraController _controller;
   late Future<void> _initializeControllerFuture;
   var _imageIsProcessing = false;
-  var _counter = 0;
+  final List<int> _durations = [];
   var _titleText = 'title text';
   DateTime _lastUpdate = DateTime.now();
+  final _jpgEncoder = imglib.JpegEncoder(quality: 90);
 
   final _wsChannel = WebSocketChannel.connect(
     // Uri.parse('wss://echo.websocket.events'),
@@ -74,8 +76,10 @@ class TakePictureScreenState extends State<TakePictureScreen> {
     // set listener to the websocket stream
     _wsChannel.stream.listen( (event) {
       print('WS event: $event');
-      var text = const Utf8Decoder().convert(event);
-      setState(() {_titleText = text;});
+      var wsText = const Utf8Decoder().convert(event);
+      var fps = _durations.isNotEmpty ? 1000 / (_durations.sum / _durations.length) : 0;
+      _titleText = 'FPS: ${fps.toStringAsFixed(0)} $wsText';
+      setState(() {});
     });
 
     // Next, initialize the controller. This returns a Future.
@@ -87,19 +91,29 @@ class TakePictureScreenState extends State<TakePictureScreen> {
         }
         _imageIsProcessing = true;
 
-        if ((DateTime.now().millisecondsSinceEpoch - _lastUpdate.millisecondsSinceEpoch) > 1000) {
+        if ((DateTime.now().millisecondsSinceEpoch - _lastUpdate.millisecondsSinceEpoch) > 10) {
           var start = DateTime.now().millisecondsSinceEpoch;
-          var bytesMean = image.planes.first.bytes.reduce((value, element) => value + element).toDouble() / image.planes.first.bytes.length;
-          print('$_counter Image: ${image.width} x ${image.height}, ${image.format.group} $bytesMean');
 
-          var jpgBytes = _convertYUV420toJpg(image);
-          print('conversion done ${jpgBytes.length}');
+          var convertedImage = _convertYUV420toJpg(image);
+          var conversionEnd = DateTime.now().millisecondsSinceEpoch;
+          print('yuv conversion took ${conversionEnd - start} ms');
 
-          _wsChannel.sink.add(jpgBytes);
+          var encodedBytes = _jpgEncoder.encodeImage(convertedImage);
+          var encodedEnd = DateTime.now().millisecondsSinceEpoch;
+          print('jpg took ${encodedEnd - conversionEnd} ms');
 
-          _counter++;
+
+          _wsChannel.sink.add(encodedBytes);
+
           _lastUpdate = DateTime.now();
-          print('Processing took ${_lastUpdate.millisecondsSinceEpoch - start} ms');
+          print('websocket took ${_lastUpdate.millisecondsSinceEpoch - encodedEnd} ms');
+
+          var duration = _lastUpdate.millisecondsSinceEpoch - start;
+          print('Processing total: $duration ms');
+          _durations.add(duration);
+          if (_durations.length > 20) {
+            _durations.removeAt(0);
+          }
         }
         _imageIsProcessing = false;
 
@@ -107,7 +121,7 @@ class TakePictureScreenState extends State<TakePictureScreen> {
     });
   }
 
-  List<int> _convertYUV420toJpg(CameraImage image) {
+  imglib.Image _convertYUV420toJpg(CameraImage image) {
     const shift = (0xFF << 24);
     try {
       final int width = image.width;
@@ -138,12 +152,11 @@ class TakePictureScreenState extends State<TakePictureScreen> {
           }
         }
       }
-      imglib.JpegEncoder jpgEncoder = imglib.JpegEncoder(quality: 90);
-      return jpgEncoder.encodeImage(img);
+      return img;
     } catch (e) {
       print(">>>>>>>>>>>> ERROR ${e.toString()}");
     }
-    return List<int>.filled(5, 0);
+    return imglib.Image(0, 0);
   }
 
   @override

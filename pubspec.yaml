@@ -37,6 +37,7 @@ dependencies:
   camera: ^0.9.6
   web_socket_channel: ^2.2.0
   image: ^3.2.0
+  collection: ^1.16.0
 
 dev_dependencies:
   flutter_test:
