@@ -52,7 +52,10 @@ class TakePictureScreenState extends State<TakePictureScreen> {
   final List<int> _durations = [];
   var _titleText = 'title text';
   DateTime _lastUpdate = DateTime.now();
-  final _jpgEncoder = imglib.JpegEncoder(quality: 90);
+
+  // use jpg to save network, and bmp to increase fps
+  // final _imgEncoder = imglib.JpegEncoder(quality: 90);
+  final _imgEncoder = imglib.BmpEncoder();
 
   final _wsChannel = WebSocketChannel.connect(
     // Uri.parse('wss://echo.websocket.events'),
@@ -98,9 +101,9 @@ class TakePictureScreenState extends State<TakePictureScreen> {
           var conversionEnd = DateTime.now().millisecondsSinceEpoch;
           print('yuv conversion took ${conversionEnd - start} ms');
 
-          var encodedBytes = _jpgEncoder.encodeImage(convertedImage);
+          var encodedBytes = _imgEncoder.encodeImage(convertedImage);
           var encodedEnd = DateTime.now().millisecondsSinceEpoch;
-          print('jpg took ${encodedEnd - conversionEnd} ms');
+          print('compress took ${encodedEnd - conversionEnd} ms');
 
 
           _wsChannel.sink.add(encodedBytes);
