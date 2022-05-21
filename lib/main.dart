@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:image/image.dart' as imglib;
 
 Future<void> main() async {
   // Ensure that plugin services are initialized so that `availableCameras()`
@@ -54,7 +55,9 @@ class TakePictureScreenState extends State<TakePictureScreen> {
 
   final _wsChannel = WebSocketChannel.connect(
     // Uri.parse('wss://echo.websocket.events'),
-    Uri.parse('ws://kl-bio-lukas-cpu.keyless.technology:8880/echo_bytes'),
+    Uri.parse('ws://kl-bio-lukas-cpu.keyless.technology:8880/send_image_jpg'),
+    // Uri.parse('ws://kl-bio-lukas-cpu.keyless.technology:8880/send_image_jpg'),
+    // Uri.parse('ws://kl-bio-lukas-cpu.keyless.technology:8880/echo_bytes'),
   );
 
   @override
@@ -71,8 +74,8 @@ class TakePictureScreenState extends State<TakePictureScreen> {
 
     // set listener to the websocket stream
     _wsChannel.stream.listen( (event) {
-      print('WS event: ${event}');
-      var text = Utf8Decoder().convert(event);
+      print('WS event: $event');
+      var text = const Utf8Decoder().convert(event);
       setState(() {_titleText = text;});
     });
 
@@ -85,20 +88,63 @@ class TakePictureScreenState extends State<TakePictureScreen> {
         }
         _imageIsProcessing = true;
 
-        if ((DateTime.now().millisecondsSinceEpoch - _lastUpdate.millisecondsSinceEpoch) > 3000) {
-
+        if ((DateTime.now().millisecondsSinceEpoch - _lastUpdate.millisecondsSinceEpoch) > 1000) {
+          var start = DateTime.now().millisecondsSinceEpoch;
           var bytesMean = image.planes.first.bytes.reduce((value, element) => value + element).toDouble() / image.planes.first.bytes.length;
-          print('${_counter} Image: ${image.width} x ${image.height}, ${image.format.group} ${bytesMean}');
+          print('$_counter Image: ${image.width} x ${image.height}, ${image.format.group} $bytesMean');
 
-          _wsChannel.sink.add('msg ${_counter} ${bytesMean}'.codeUnits);
+          var jpgBytes = _convertYUV420toJpg(image);
+          print('conversion done ${jpgBytes.length}');
+
+          _wsChannel.sink.add(jpgBytes);
 
           _counter++;
           _lastUpdate = DateTime.now();
+          print('Processing took ${_lastUpdate.millisecondsSinceEpoch - start} ms');
         }
-
         _imageIsProcessing = false;
+
       });
     });
+  }
+
+  List<int> _convertYUV420toJpg(CameraImage image) {
+    const shift = (0xFF << 24);
+    try {
+      final int width = image.width;
+      final int height = image.height;
+      final int uvRowStride = image.planes[1].bytesPerRow;
+      final int uvPixelStride = image.planes[1].bytesPerPixel!;
+
+      // imgLib -> Image package from https://pub.dartlang.org/packages/image
+      var img = imglib.Image(height, width); // Create Image buffer
+
+      // Fill image buffer with plane[0] from YUV420_888
+      for(int x=0; x < width; x++) {
+        for(int y=0; y < height; y++) {
+          final int uvIndex = uvPixelStride * (x/2).floor() + uvRowStride*(y/2).floor();
+          final int index = y * width + x;
+
+          final yp = image.planes[0].bytes[index];
+          final up = image.planes[1].bytes[uvIndex];
+          final vp = image.planes[2].bytes[uvIndex];
+          // Calculate pixel color
+          int r = (yp + vp * 1436 / 1024 - 179).round().clamp(0, 255);
+          int g = (yp - up * 46549 / 131072 + 44 -vp * 93604 / 131072 + 91).round().clamp(0, 255);
+          int b = (yp + up * 1814 / 1024 - 227).round().clamp(0, 255);
+          // color: 0x FF  FF  FF  FF
+          //           A   B   G   R
+          if (img.boundsSafe(height-y, x)){
+            img.setPixelRgba(height-y, x, r, g ,b ,shift);
+          }
+        }
+      }
+      imglib.JpegEncoder jpgEncoder = imglib.JpegEncoder(quality: 90);
+      return jpgEncoder.encodeImage(img);
+    } catch (e) {
+      print(">>>>>>>>>>>> ERROR ${e.toString()}");
+    }
+    return List<int>.filled(5, 0);
   }
 
   @override
