@@ -54,8 +54,8 @@ class TakePictureScreenState extends State<TakePictureScreen> {
   DateTime _lastUpdate = DateTime.now();
 
   // use jpg to save network, and bmp to increase fps
-  // final _imgEncoder = imglib.JpegEncoder(quality: 90);
-  final _imgEncoder = imglib.BmpEncoder();
+  final _imgEncoder = imglib.JpegEncoder(quality: 90);
+  // final _imgEncoder = imglib.BmpEncoder();
 
   final _wsChannel = WebSocketChannel.connect(
     // Uri.parse('wss://echo.websocket.events'),
@@ -79,9 +79,10 @@ class TakePictureScreenState extends State<TakePictureScreen> {
     // set listener to the websocket stream
     _wsChannel.stream.listen( (event) {
       print('WS event: $event');
-      var wsText = const Utf8Decoder().convert(event);
+      // var wsText = const Utf8Decoder().convert(event);
+      var wsText = event;
       var fps = _durations.isNotEmpty ? 1000 / (_durations.sum / _durations.length) : 0;
-      _titleText = 'FPS: ${fps.toStringAsFixed(0)} $wsText';
+      _titleText = '${fps.toStringAsFixed(0)} $wsText';
       setState(() {});
     });
 
