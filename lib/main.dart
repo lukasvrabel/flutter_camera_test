@@ -59,7 +59,8 @@ class TakePictureScreenState extends State<TakePictureScreen> {
 
   final _wsChannel = WebSocketChannel.connect(
     // Uri.parse('wss://echo.websocket.events'),
-    Uri.parse('ws://kl-bio-lukas-cpu.keyless.technology:8880/send_image_jpg'),
+    Uri.parse('ws://kl-bio-lukas-gpu.keyless.technology:8880/send_image_jpg'),
+    // Uri.parse('ws://kl-bio-lukas-gpu.keyless.technology:8880/echo_bytes'),
     // Uri.parse('ws://kl-bio-lukas-cpu.keyless.technology:8880/send_image_jpg'),
     // Uri.parse('ws://kl-bio-lukas-cpu.keyless.technology:8880/echo_bytes'),
   );
