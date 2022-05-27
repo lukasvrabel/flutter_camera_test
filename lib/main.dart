@@ -47,9 +47,9 @@ class TakePictureScreen extends StatefulWidget {
 
 class TakePictureScreenState extends State<TakePictureScreen> {
   late CameraController _controller;
-  late Future<void> _initializeControllerFuture;
+  late Future<void> _initializeCameraFuture;
   final _websocketCompleter = Completer<void>();
-  late Future<void> _initializeEverything;
+  late Future<void> _initializeEverythingFuture;
 
   var _imageIsProcessing = false;
   final List<int> _durations = [];
@@ -78,6 +78,7 @@ class TakePictureScreenState extends State<TakePictureScreen> {
       widget.camera,
       // Define the resolution to use.
       ResolutionPreset.medium,
+      enableAudio: false,
     );
 
     // websocketCompleter will be complete when first message from the server arrives
@@ -86,62 +87,68 @@ class TakePictureScreenState extends State<TakePictureScreen> {
     // set listener to the websocket stream
     _wsChannel.stream.listen( (event) {
 
-      print('WS event: $event');
+        print('WS event: $event');
 
-      // trigger websocket connection complete after the first message arrives
-      if (!_websocketCompleter.isCompleted) {
-        _websocketCompleter.complete();
+        // trigger websocket connection complete after the first message arrives
+        if (!_websocketCompleter.isCompleted) {
+          _websocketCompleter.complete();
+        }
+        // var wsText = const Utf8Decoder().convert(event);
+        var wsText = event;
+        var fps = _durations.isNotEmpty ? 1000 / (_durations.sum / _durations.length) : 0;
+        _titleText = 'fps:${fps.toStringAsFixed(0)} $wsText';
+        setState(() {});
+      },
+      onError: (err) {
+        print('websocket connect error: $err');
+        setState(() => {_titleText = 'conn error $err'});
       }
-      // var wsText = const Utf8Decoder().convert(event);
-      var wsText = event;
-      var fps = _durations.isNotEmpty ? 1000 / (_durations.sum / _durations.length) : 0;
-      _titleText = 'fps:${fps.toStringAsFixed(0)} $wsText';
-      setState(() {});
-    }, onError: (err) {setState(() => _titleText='conn error $err');});
+    );
 
     // Next, initialize the controller. This returns a Future.
-    _initializeControllerFuture = _controller.initialize();
+    _initializeCameraFuture = _controller.initialize();
 
     // after both webserver and camera is initialized, we can start streaming
-    _initializeEverything = Future.wait([_initializeControllerFuture, _websocketCompleter.future]);
-    _initializeEverything.then( (value) {
+    _initializeEverythingFuture = Future.wait([_initializeCameraFuture, _websocketCompleter.future]);
+    _initializeEverythingFuture.then( (value) {
       _controller.startImageStream((image) async {
         if (_imageIsProcessing) {
           return;
         }
-        _imageIsProcessing = true;
 
-        if ((DateTime.now().millisecondsSinceEpoch - _lastUpdate.millisecondsSinceEpoch) > 10) {
-          var start = DateTime.now().millisecondsSinceEpoch;
-
-          var convertedImage = _convertYUV420toJpg(image);
-          var conversionEnd = DateTime.now().millisecondsSinceEpoch;
-          // print('yuv conversion took ${conversionEnd - start} ms');
-
-          var encodedBytes = _imgEncoder.encodeImage(convertedImage);
-          var encodedEnd = DateTime.now().millisecondsSinceEpoch;
-          // print('compress took ${encodedEnd - conversionEnd} ms');
-
-
-          _wsChannel.sink.add(encodedBytes);
-
+        if ((DateTime.now().millisecondsSinceEpoch - _lastUpdate.millisecondsSinceEpoch) > 120) {
+          var timeFromLastUpdate =  DateTime.now().millisecondsSinceEpoch - _lastUpdate.millisecondsSinceEpoch;
           _lastUpdate = DateTime.now();
-          // print('websocket took ${_lastUpdate.millisecondsSinceEpoch - encodedEnd} ms');
-
-          var duration = _lastUpdate.millisecondsSinceEpoch - start;
-          print('Processing total: $duration ms');
-          _durations.add(duration);
+          _durations.add(timeFromLastUpdate);
           if (_durations.length > 20) {
             _durations.removeAt(0);
           }
+          _imageIsProcessing = true;
+
+          var start = DateTime.now().millisecondsSinceEpoch;
+
+          var convertedImage = _convertYUV420toRGB(image);
+          // var conversionEnd = DateTime.now().millisecondsSinceEpoch;
+          // print('yuv conversion took ${conversionEnd - start} ms');
+
+          var encodedBytes = _imgEncoder.encodeImage(convertedImage);
+          // var encodedEnd = DateTime.now().millisecondsSinceEpoch;
+          // print('compress took ${encodedEnd - conversionEnd} ms');
+
+          _wsChannel.sink.add(encodedBytes);
+
+          // print('websocket took ${_lastUpdate.millisecondsSinceEpoch - encodedEnd} ms');
+
+          var totalDuration = DateTime.now().millisecondsSinceEpoch - start;
+          print('Processing total: $totalDuration ms');
+          _imageIsProcessing = false;
         }
-        _imageIsProcessing = false;
 
       });
     });
   }
 
-  imglib.Image _convertYUV420toJpg(CameraImage image) {
+  imglib.Image _convertYUV420toRGB(CameraImage image) {
     const shift = (0xFF << 24);
     try {
       final int width = image.width;
@@ -167,11 +174,12 @@ class TakePictureScreenState extends State<TakePictureScreen> {
           int b = (yp + up * 1814 / 1024 - 227).round().clamp(0, 255);
           // color: 0x FF  FF  FF  FF
           //           A   B   G   R
-          if (img.boundsSafe(height-y, x)){
-            img.setPixelRgba(height-y, x, r, g ,b ,shift);
+          if (img.boundsSafe(height - y, x)){
+            img.setPixelRgba(height - y, x, r, g ,b ,shift);
           }
         }
       }
+      img = imglib.flip(img, imglib.Flip.vertical);
       return img;
     } catch (e) {
       print(">>>>>>>>>>>> ERROR ${e.toString()}");
@@ -195,7 +203,7 @@ class TakePictureScreenState extends State<TakePictureScreen> {
       // camera preview. Use a FutureBuilder to display a loading spinner until the
       // controller has finished initializing.
       body: FutureBuilder<void>(
-        future: _initializeEverything,
+        future: _initializeEverythingFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.done) {
             // If the Future is complete, display the preview.
