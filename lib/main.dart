@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -49,6 +48,9 @@ class TakePictureScreen extends StatefulWidget {
 class TakePictureScreenState extends State<TakePictureScreen> {
   late CameraController _controller;
   late Future<void> _initializeControllerFuture;
+  final _websocketCompleter = Completer<void>();
+  late Future<void> _initializeEverything;
+
   var _imageIsProcessing = false;
   final List<int> _durations = [];
   var _titleText = 'connecting to server';
@@ -78,19 +80,31 @@ class TakePictureScreenState extends State<TakePictureScreen> {
       ResolutionPreset.medium,
     );
 
+    // websocketCompleter will be complete when first message from the server arrives
+    _websocketCompleter.future.then((value) => print('complete future then called'));
+
     // set listener to the websocket stream
     _wsChannel.stream.listen( (event) {
+
       print('WS event: $event');
+
+      // trigger websocket connection complete after the first message arrives
+      if (!_websocketCompleter.isCompleted) {
+        _websocketCompleter.complete();
+      }
       // var wsText = const Utf8Decoder().convert(event);
       var wsText = event;
       var fps = _durations.isNotEmpty ? 1000 / (_durations.sum / _durations.length) : 0;
       _titleText = 'fps:${fps.toStringAsFixed(0)} $wsText';
       setState(() {});
-    });
+    }, onError: (err) {setState(() => _titleText='conn error $err');});
 
     // Next, initialize the controller. This returns a Future.
     _initializeControllerFuture = _controller.initialize();
-    _initializeControllerFuture.then( (value) {
+
+    // after both webserver and camera is initialized, we can start streaming
+    _initializeEverything = Future.wait([_initializeControllerFuture, _websocketCompleter.future]);
+    _initializeEverything.then( (value) {
       _controller.startImageStream((image) async {
         if (_imageIsProcessing) {
           return;
@@ -102,17 +116,17 @@ class TakePictureScreenState extends State<TakePictureScreen> {
 
           var convertedImage = _convertYUV420toJpg(image);
           var conversionEnd = DateTime.now().millisecondsSinceEpoch;
-          print('yuv conversion took ${conversionEnd - start} ms');
+          // print('yuv conversion took ${conversionEnd - start} ms');
 
           var encodedBytes = _imgEncoder.encodeImage(convertedImage);
           var encodedEnd = DateTime.now().millisecondsSinceEpoch;
-          print('compress took ${encodedEnd - conversionEnd} ms');
+          // print('compress took ${encodedEnd - conversionEnd} ms');
 
 
           _wsChannel.sink.add(encodedBytes);
 
           _lastUpdate = DateTime.now();
-          print('websocket took ${_lastUpdate.millisecondsSinceEpoch - encodedEnd} ms');
+          // print('websocket took ${_lastUpdate.millisecondsSinceEpoch - encodedEnd} ms');
 
           var duration = _lastUpdate.millisecondsSinceEpoch - start;
           print('Processing total: $duration ms');
@@ -177,11 +191,11 @@ class TakePictureScreenState extends State<TakePictureScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(_titleText)),
-      // You must wait until the controller is initialized before displaying the
+      // You must wait until the controller and websocket is initialized before displaying the
       // camera preview. Use a FutureBuilder to display a loading spinner until the
       // controller has finished initializing.
       body: FutureBuilder<void>(
-        future: _initializeControllerFuture,
+        future: _initializeEverything,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.done) {
             // If the Future is complete, display the preview.
@@ -193,8 +207,8 @@ class TakePictureScreenState extends State<TakePictureScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        icon: Icon(Icons.navigation),
-        label: Text('Restart'),
+        icon: const Icon(Icons.restart_alt),
+        label: const Text('Restart'),
         onPressed: () {
           print('Restart button pressed');
           Restart.restartApp();
