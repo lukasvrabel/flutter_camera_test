@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:image/image.dart' as imglib;
 import 'package:collection/collection.dart';
+import 'package:restart_app/restart_app.dart';
 
 Future<void> main() async {
   // Ensure that plugin services are initialized so that `availableCameras()`
@@ -50,7 +51,7 @@ class TakePictureScreenState extends State<TakePictureScreen> {
   late Future<void> _initializeControllerFuture;
   var _imageIsProcessing = false;
   final List<int> _durations = [];
-  var _titleText = 'title text';
+  var _titleText = 'connecting to server';
   DateTime _lastUpdate = DateTime.now();
 
   // use jpg to save network, and bmp to increase fps
@@ -59,7 +60,7 @@ class TakePictureScreenState extends State<TakePictureScreen> {
 
   final _wsChannel = WebSocketChannel.connect(
     // Uri.parse('wss://echo.websocket.events'),
-    Uri.parse('ws://kl-bio-lukas-gpu.keyless.technology:8880/send_image_jpg'),
+    Uri.parse('ws://kl-bio-lukas-gpu.keyless.technology:8880/predict_liveness'),
     // Uri.parse('ws://kl-bio-lukas-gpu.keyless.technology:8880/echo_bytes'),
     // Uri.parse('ws://kl-bio-lukas-cpu.keyless.technology:8880/send_image_jpg'),
     // Uri.parse('ws://kl-bio-lukas-cpu.keyless.technology:8880/echo_bytes'),
@@ -83,7 +84,7 @@ class TakePictureScreenState extends State<TakePictureScreen> {
       // var wsText = const Utf8Decoder().convert(event);
       var wsText = event;
       var fps = _durations.isNotEmpty ? 1000 / (_durations.sum / _durations.length) : 0;
-      _titleText = '${fps.toStringAsFixed(0)} $wsText';
+      _titleText = 'fps:${fps.toStringAsFixed(0)} $wsText';
       setState(() {});
     });
 
@@ -191,6 +192,14 @@ class TakePictureScreenState extends State<TakePictureScreen> {
           }
         },
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        icon: Icon(Icons.navigation),
+        label: Text('Restart'),
+        onPressed: () {
+          print('Restart button pressed');
+          Restart.restartApp();
+        },
+      )
     );
   }
 }
