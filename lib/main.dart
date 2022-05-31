@@ -117,13 +117,14 @@ class TakePictureScreenState extends State<TakePictureScreen> {
         }
 
         if ((DateTime.now().millisecondsSinceEpoch - _lastUpdate.millisecondsSinceEpoch) > 120) {
+          _imageIsProcessing = true;
+
           var timeFromLastUpdate =  DateTime.now().millisecondsSinceEpoch - _lastUpdate.millisecondsSinceEpoch;
           _lastUpdate = DateTime.now();
           _durations.add(timeFromLastUpdate);
           if (_durations.length > 20) {
             _durations.removeAt(0);
           }
-          _imageIsProcessing = true;
 
           var start = DateTime.now().millisecondsSinceEpoch;
 
@@ -180,6 +181,7 @@ class TakePictureScreenState extends State<TakePictureScreen> {
         }
       }
       img = imglib.flip(img, imglib.Flip.vertical);
+      img = imglib.flip(img, imglib.Flip.horizontal);
       return img;
     } catch (e) {
       print(">>>>>>>>>>>> ERROR ${e.toString()}");
